@@ -20,31 +20,41 @@ const updateSchema = createSchema.partial().extend({
   is_active: z.boolean().optional(),
 });
 
-router.get('/', (_req: Request, res: Response) => {
-  res.json(resourceService.getAllResources());
+router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await resourceService.getAllResources());
+  } catch (err) { next(err); }
 });
 
-router.get('/:id', (req: Request, res: Response, next: NextFunction) => {
-  const resource = resourceService.getResourceById(Number(req.params.id));
-  if (!resource) return next(new AppError(404, 'Resource not found'));
-  res.json(resource);
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const resource = await resourceService.getResourceById(Number(req.params.id));
+    if (!resource) return next(new AppError(404, 'Resource not found'));
+    res.json(resource);
+  } catch (err) { next(err); }
 });
 
-router.post('/', validate(createSchema), (req: Request, res: Response) => {
-  const resource = resourceService.createResource(req.body);
-  res.status(201).json(resource);
+router.post('/', validate(createSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const resource = await resourceService.createResource(req.body);
+    res.status(201).json(resource);
+  } catch (err) { next(err); }
 });
 
-router.put('/:id', validate(updateSchema), (req: Request, res: Response, next: NextFunction) => {
-  const resource = resourceService.updateResource(Number(req.params.id), req.body);
-  if (!resource) return next(new AppError(404, 'Resource not found'));
-  res.json(resource);
+router.put('/:id', validate(updateSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const resource = await resourceService.updateResource(Number(req.params.id), req.body);
+    if (!resource) return next(new AppError(404, 'Resource not found'));
+    res.json(resource);
+  } catch (err) { next(err); }
 });
 
-router.delete('/:id', (req: Request, res: Response, next: NextFunction) => {
-  const deleted = resourceService.deleteResource(Number(req.params.id));
-  if (!deleted) return next(new AppError(404, 'Resource not found'));
-  res.status(204).send();
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const deleted = await resourceService.deleteResource(Number(req.params.id));
+    if (!deleted) return next(new AppError(404, 'Resource not found'));
+    res.status(204).send();
+  } catch (err) { next(err); }
 });
 
 export default router;

@@ -19,47 +19,51 @@ const createSchema = z.object({
 
 const updateSchema = createSchema.partial();
 
-router.get('/', (_req: Request, res: Response) => {
-  res.json(bookingService.getAllBookings());
-});
-
-router.get('/schedule', (req: Request, res: Response, next: NextFunction) => {
-  const { start, end } = req.query;
-  if (!start || !end) {
-    return next(new AppError(400, 'start and end query parameters are required'));
-  }
-  res.json(bookingService.getSchedule(start as string, end as string));
-});
-
-router.get('/:id', (req: Request, res: Response, next: NextFunction) => {
-  const booking = bookingService.getBookingById(Number(req.params.id));
-  if (!booking) return next(new AppError(404, 'Booking not found'));
-  res.json(booking);
-});
-
-router.post('/', validate(createSchema), (req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const booking = bookingService.createBooking(req.body);
-    res.status(201).json(booking);
-  } catch (err) {
-    next(err);
-  }
+    res.json(await bookingService.getAllBookings());
+  } catch (err) { next(err); }
 });
 
-router.put('/:id', validate(updateSchema), (req: Request, res: Response, next: NextFunction) => {
+router.get('/schedule', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const booking = bookingService.updateBooking(Number(req.params.id), req.body);
+    const { start, end } = req.query;
+    if (!start || !end) {
+      return next(new AppError(400, 'start and end query parameters are required'));
+    }
+    res.json(await bookingService.getSchedule(start as string, end as string));
+  } catch (err) { next(err); }
+});
+
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const booking = await bookingService.getBookingById(Number(req.params.id));
     if (!booking) return next(new AppError(404, 'Booking not found'));
     res.json(booking);
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
-router.delete('/:id', (req: Request, res: Response, next: NextFunction) => {
-  const deleted = bookingService.deleteBooking(Number(req.params.id));
-  if (!deleted) return next(new AppError(404, 'Booking not found'));
-  res.status(204).send();
+router.post('/', validate(createSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const booking = await bookingService.createBooking(req.body);
+    res.status(201).json(booking);
+  } catch (err) { next(err); }
+});
+
+router.put('/:id', validate(updateSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const booking = await bookingService.updateBooking(Number(req.params.id), req.body);
+    if (!booking) return next(new AppError(404, 'Booking not found'));
+    res.json(booking);
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const deleted = await bookingService.deleteBooking(Number(req.params.id));
+    if (!deleted) return next(new AppError(404, 'Booking not found'));
+    res.status(204).send();
+  } catch (err) { next(err); }
 });
 
 export default router;

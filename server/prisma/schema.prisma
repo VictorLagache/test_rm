@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Department {
+  id         Int        @id @default(autoincrement())
+  name       String     @unique
+  created_at DateTime   @default(now())
+  resources  Resource[]
+}
+
+model Resource {
+  id             Int         @id @default(autoincrement())
+  first_name     String
+  last_name      String
+  email          String      @unique
+  role           String      @default("")
+  department_id  Int?
+  department     Department? @relation(fields: [department_id], references: [id], onDelete: SetNull)
+  capacity_hours Float       @default(8.0)
+  color          String      @default("#3B82F6")
+  is_active      Boolean     @default(true)
+  created_at     DateTime    @default(now())
+  updated_at     DateTime    @updatedAt
+  bookings       Booking[]
+
+  @@index([department_id])
+}
+
+model Project {
+  id           Int       @id @default(autoincrement())
+  name         String
+  client_name  String    @default("")
+  color        String    @default("#8B5CF6")
+  start_date   String?
+  end_date     String?
+  budget_hours Float?
+  is_active    Boolean   @default(true)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+  bookings     Booking[]
+}
+
+model Booking {
+  id            Int      @id @default(autoincrement())
+  resource_id   Int
+  resource      Resource @relation(fields: [resource_id], references: [id], onDelete: Cascade)
+  project_id    Int?
+  project       Project? @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  start_date    String
+  end_date      String
+  hours_per_day Float    @default(8.0)
+  booking_type  String
+  leave_type    String?
+  notes         String   @default("")
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@index([resource_id, start_date, end_date])
+  @@index([project_id])
+}

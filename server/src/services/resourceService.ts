@@ -1,4 +1,4 @@
-import { getDb } from '../db/connection.js';
+import { supabase } from '../lib/supabase.js';
 
 export interface Resource {
   id: number;
@@ -7,7 +7,7 @@ export interface Resource {
   email: string;
   role: string;
   department_id: number | null;
-  department_name?: string;
+  department_name?: string | null;
   capacity_hours: number;
   color: string;
   is_active: number;
@@ -29,70 +29,87 @@ export interface UpdateResourceInput extends Partial<CreateResourceInput> {
   is_active?: boolean;
 }
 
-export function getAllResources(): Resource[] {
-  const db = getDb();
-  return db.prepare(`
-    SELECT r.*, d.name as department_name
-    FROM resources r
-    LEFT JOIN departments d ON r.department_id = d.id
-    ORDER BY r.first_name, r.last_name
-  `).all() as Resource[];
+function toResource(r: Record<string, unknown>): Resource {
+  const dept = r.Department as { name: string } | null;
+  return {
+    id: r.id as number,
+    first_name: r.first_name as string,
+    last_name: r.last_name as string,
+    email: r.email as string,
+    role: r.role as string,
+    department_id: r.department_id as number | null,
+    department_name: dept?.name ?? null,
+    capacity_hours: r.capacity_hours as number,
+    color: r.color as string,
+    is_active: r.is_active ? 1 : 0,
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+  };
 }
 
-export function getResourceById(id: number): Resource | undefined {
-  const db = getDb();
-  return db.prepare(`
-    SELECT r.*, d.name as department_name
-    FROM resources r
-    LEFT JOIN departments d ON r.department_id = d.id
-    WHERE r.id = ?
-  `).get(id) as Resource | undefined;
+export async function getAllResources(): Promise<Resource[]> {
+  const { data, error } = await supabase
+    .from('Resource')
+    .select('*, Department(name)')
+    .order('first_name')
+    .order('last_name');
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(toResource);
 }
 
-export function createResource(input: CreateResourceInput): Resource {
-  const db = getDb();
-  const result = db.prepare(`
-    INSERT INTO resources (first_name, last_name, email, role, department_id, capacity_hours, color)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    input.first_name,
-    input.last_name,
-    input.email,
-    input.role ?? '',
-    input.department_id ?? null,
-    input.capacity_hours ?? 8,
-    input.color ?? '#3B82F6'
-  );
-  return getResourceById(Number(result.lastInsertRowid))!;
+export async function getResourceById(id: number): Promise<Resource | undefined> {
+  const { data, error } = await supabase
+    .from('Resource')
+    .select('*, Department(name)')
+    .eq('id', id)
+    .single();
+  if (error) return undefined;
+  return toResource(data);
 }
 
-export function updateResource(id: number, input: UpdateResourceInput): Resource | undefined {
-  const db = getDb();
-  const existing = getResourceById(id);
+export async function createResource(input: CreateResourceInput): Promise<Resource> {
+  const { data, error } = await supabase
+    .from('Resource')
+    .insert({
+      first_name: input.first_name,
+      last_name: input.last_name,
+      email: input.email,
+      role: input.role ?? '',
+      department_id: input.department_id ?? null,
+      capacity_hours: input.capacity_hours ?? 8,
+      color: input.color ?? '#3B82F6',
+    })
+    .select('*, Department(name)')
+    .single();
+  if (error) throw new Error(error.message);
+  return toResource(data);
+}
+
+export async function updateResource(id: number, input: UpdateResourceInput): Promise<Resource | undefined> {
+  const existing = await getResourceById(id);
   if (!existing) return undefined;
 
-  db.prepare(`
-    UPDATE resources
-    SET first_name = ?, last_name = ?, email = ?, role = ?,
-        department_id = ?, capacity_hours = ?, color = ?, is_active = ?,
-        updated_at = datetime('now')
-    WHERE id = ?
-  `).run(
-    input.first_name ?? existing.first_name,
-    input.last_name ?? existing.last_name,
-    input.email ?? existing.email,
-    input.role ?? existing.role,
-    input.department_id !== undefined ? input.department_id : existing.department_id,
-    input.capacity_hours ?? existing.capacity_hours,
-    input.color ?? existing.color,
-    input.is_active !== undefined ? (input.is_active ? 1 : 0) : existing.is_active,
-    id
-  );
-  return getResourceById(id);
+  const { data, error } = await supabase
+    .from('Resource')
+    .update({
+      first_name: input.first_name ?? existing.first_name,
+      last_name: input.last_name ?? existing.last_name,
+      email: input.email ?? existing.email,
+      role: input.role ?? existing.role,
+      department_id: input.department_id !== undefined ? input.department_id : existing.department_id,
+      capacity_hours: input.capacity_hours ?? existing.capacity_hours,
+      color: input.color ?? existing.color,
+      is_active: input.is_active !== undefined ? input.is_active : Boolean(existing.is_active),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*, Department(name)')
+    .single();
+  if (error) throw new Error(error.message);
+  return toResource(data);
 }
 
-export function deleteResource(id: number): boolean {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM resources WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deleteResource(id: number): Promise<boolean> {
+  const { error } = await supabase.from('Resource').delete().eq('id', id);
+  return !error;
 }

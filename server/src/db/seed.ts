@@ -1,125 +1,83 @@
-import { getDb } from './connection.js';
-import { initializeDatabase } from './schema.js';
+import 'dotenv/config';
+import { supabase } from '../lib/supabase.js';
 import { format, addDays, startOfWeek, addWeeks } from 'date-fns';
 
-function seed() {
-  initializeDatabase();
-  const db = getDb();
-
-  // Clear existing data
-  db.exec(`
-    DELETE FROM bookings;
-    DELETE FROM resources;
-    DELETE FROM projects;
-    DELETE FROM departments;
-  `);
+async function seed() {
+  // Clear in reverse dependency order
+  await supabase.from('Booking').delete().neq('id', 0);
+  await supabase.from('Resource').delete().neq('id', 0);
+  await supabase.from('Project').delete().neq('id', 0);
+  await supabase.from('Department').delete().neq('id', 0);
 
   // Departments
-  const insertDept = db.prepare('INSERT INTO departments (name) VALUES (?)');
-  const depts = ['Engineering', 'Design', 'Marketing'];
-  const deptIds: Record<string, number> = {};
-  for (const name of depts) {
-    const result = insertDept.run(name);
-    deptIds[name] = Number(result.lastInsertRowid);
-  }
+  const { data: depts } = await supabase
+    .from('Department')
+    .insert([{ name: 'Engineering' }, { name: 'Design' }, { name: 'Marketing' }])
+    .select('id, name');
+
+  const deptMap: Record<string, number> = {};
+  for (const d of depts ?? []) deptMap[d.name] = d.id;
 
   // Resources
-  const insertResource = db.prepare(`
-    INSERT INTO resources (first_name, last_name, email, role, department_id, capacity_hours, color)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+  const { data: resources } = await supabase
+    .from('Resource')
+    .insert([
+      { first_name: 'Alice', last_name: 'Martin', email: 'alice@company.com', role: 'Senior Developer', department_id: deptMap['Engineering'], capacity_hours: 8, color: '#3B82F6' },
+      { first_name: 'Bob', last_name: 'Chen', email: 'bob@company.com', role: 'Full-Stack Developer', department_id: deptMap['Engineering'], capacity_hours: 8, color: '#10B981' },
+      { first_name: 'Clara', last_name: 'Jones', email: 'clara@company.com', role: 'UI Designer', department_id: deptMap['Design'], capacity_hours: 8, color: '#F59E0B' },
+      { first_name: 'David', last_name: 'Kim', email: 'david@company.com', role: 'UX Researcher', department_id: deptMap['Design'], capacity_hours: 6, color: '#EF4444' },
+      { first_name: 'Emma', last_name: 'Wilson', email: 'emma@company.com', role: 'Project Manager', department_id: deptMap['Engineering'], capacity_hours: 8, color: '#8B5CF6' },
+      { first_name: 'Frank', last_name: 'Garcia', email: 'frank@company.com', role: 'Backend Developer', department_id: deptMap['Engineering'], capacity_hours: 8, color: '#06B6D4' },
+      { first_name: 'Grace', last_name: 'Lee', email: 'grace@company.com', role: 'Content Strategist', department_id: deptMap['Marketing'], capacity_hours: 8, color: '#EC4899' },
+      { first_name: 'Henry', last_name: 'Brown', email: 'henry@company.com', role: 'Marketing Lead', department_id: deptMap['Marketing'], capacity_hours: 8, color: '#F97316' },
+    ])
+    .select('id');
 
-  const resourcesData = [
-    ['Alice', 'Martin', 'alice@company.com', 'Senior Developer', deptIds['Engineering'], 8, '#3B82F6'],
-    ['Bob', 'Chen', 'bob@company.com', 'Full-Stack Developer', deptIds['Engineering'], 8, '#10B981'],
-    ['Clara', 'Jones', 'clara@company.com', 'UI Designer', deptIds['Design'], 8, '#F59E0B'],
-    ['David', 'Kim', 'david@company.com', 'UX Researcher', deptIds['Design'], 6, '#EF4444'],
-    ['Emma', 'Wilson', 'emma@company.com', 'Project Manager', deptIds['Engineering'], 8, '#8B5CF6'],
-    ['Frank', 'Garcia', 'frank@company.com', 'Backend Developer', deptIds['Engineering'], 8, '#06B6D4'],
-    ['Grace', 'Lee', 'grace@company.com', 'Content Strategist', deptIds['Marketing'], 8, '#EC4899'],
-    ['Henry', 'Brown', 'henry@company.com', 'Marketing Lead', deptIds['Marketing'], 8, '#F97316'],
-  ];
-
-  const resourceIds: number[] = [];
-  for (const r of resourcesData) {
-    const result = insertResource.run(...r);
-    resourceIds.push(Number(result.lastInsertRowid));
-  }
+  const rId = (resources ?? []).map((r: { id: number }) => r.id);
 
   // Projects
-  const insertProject = db.prepare(`
-    INSERT INTO projects (name, client_name, color, start_date, end_date, budget_hours)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-
   const today = new Date();
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+  const w = startOfWeek(today, { weekStartsOn: 1 });
   const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
 
-  const projectsData = [
-    ['Website Redesign', 'Acme Corp', '#3B82F6', fmt(weekStart), fmt(addWeeks(weekStart, 8)), 480],
-    ['Mobile App', 'TechStart Inc', '#10B981', fmt(weekStart), fmt(addWeeks(weekStart, 12)), 640],
-    ['Brand Refresh', 'Global Media', '#F59E0B', fmt(addWeeks(weekStart, 1)), fmt(addWeeks(weekStart, 6)), 240],
-    ['API Integration', 'DataFlow Ltd', '#8B5CF6', fmt(addWeeks(weekStart, 2)), fmt(addWeeks(weekStart, 10)), 320],
-    ['Marketing Campaign', 'FreshBrand Co', '#EC4899', fmt(weekStart), fmt(addWeeks(weekStart, 4)), 160],
-  ];
+  const { data: projects } = await supabase
+    .from('Project')
+    .insert([
+      { name: 'Website Redesign', client_name: 'Acme Corp', color: '#3B82F6', start_date: fmt(w), end_date: fmt(addWeeks(w, 8)), budget_hours: 480 },
+      { name: 'Mobile App', client_name: 'TechStart Inc', color: '#10B981', start_date: fmt(w), end_date: fmt(addWeeks(w, 12)), budget_hours: 640 },
+      { name: 'Brand Refresh', client_name: 'Global Media', color: '#F59E0B', start_date: fmt(addWeeks(w, 1)), end_date: fmt(addWeeks(w, 6)), budget_hours: 240 },
+      { name: 'API Integration', client_name: 'DataFlow Ltd', color: '#8B5CF6', start_date: fmt(addWeeks(w, 2)), end_date: fmt(addWeeks(w, 10)), budget_hours: 320 },
+      { name: 'Marketing Campaign', client_name: 'FreshBrand Co', color: '#EC4899', start_date: fmt(w), end_date: fmt(addWeeks(w, 4)), budget_hours: 160 },
+    ])
+    .select('id');
 
-  const projectIds: number[] = [];
-  for (const p of projectsData) {
-    const result = insertProject.run(...p);
-    projectIds.push(Number(result.lastInsertRowid));
-  }
+  const pId = (projects ?? []).map((p: { id: number }) => p.id);
 
   // Bookings
-  const insertBooking = db.prepare(`
-    INSERT INTO bookings (resource_id, project_id, start_date, end_date, hours_per_day, booking_type, leave_type, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const bookingsData = [
-    // Alice - Website Redesign
-    [resourceIds[0], projectIds[0], fmt(weekStart), fmt(addDays(weekStart, 9)), 6, 'project', null, 'Frontend development'],
-    // Alice - API Integration (partial)
-    [resourceIds[0], projectIds[3], fmt(addWeeks(weekStart, 2)), fmt(addDays(addWeeks(weekStart, 2), 4)), 4, 'project', null, 'API review'],
-    // Bob - Mobile App
-    [resourceIds[1], projectIds[1], fmt(weekStart), fmt(addDays(weekStart, 14)), 8, 'project', null, 'Core features'],
-    // Clara - Website Redesign
-    [resourceIds[2], projectIds[0], fmt(weekStart), fmt(addDays(weekStart, 6)), 8, 'project', null, 'UI mockups'],
-    // Clara - Brand Refresh
-    [resourceIds[2], projectIds[2], fmt(addWeeks(weekStart, 1)), fmt(addDays(addWeeks(weekStart, 1), 9)), 4, 'project', null, 'Visual identity'],
-    // David - Website Redesign
-    [resourceIds[3], projectIds[0], fmt(weekStart), fmt(addDays(weekStart, 4)), 6, 'project', null, 'User research'],
-    // David - leave
-    [resourceIds[3], null, fmt(addWeeks(weekStart, 1)), fmt(addDays(addWeeks(weekStart, 1), 4)), 6, 'leave', 'vacation', 'Family trip'],
-    // Emma - Website Redesign
-    [resourceIds[4], projectIds[0], fmt(weekStart), fmt(addDays(weekStart, 19)), 4, 'project', null, 'Project coordination'],
-    // Emma - Mobile App
-    [resourceIds[4], projectIds[1], fmt(weekStart), fmt(addDays(weekStart, 19)), 4, 'project', null, 'Project coordination'],
-    // Frank - API Integration
-    [resourceIds[5], projectIds[3], fmt(addWeeks(weekStart, 2)), fmt(addDays(addWeeks(weekStart, 2), 14)), 8, 'project', null, 'Backend implementation'],
-    // Frank - Mobile App (first 2 weeks)
-    [resourceIds[5], projectIds[1], fmt(weekStart), fmt(addDays(weekStart, 9)), 8, 'project', null, 'API endpoints'],
-    // Grace - Marketing Campaign
-    [resourceIds[6], projectIds[4], fmt(weekStart), fmt(addDays(weekStart, 14)), 6, 'project', null, 'Content creation'],
-    // Grace - Brand Refresh
-    [resourceIds[6], projectIds[2], fmt(addWeeks(weekStart, 1)), fmt(addDays(addWeeks(weekStart, 1), 9)), 2, 'project', null, 'Copy writing'],
-    // Henry - Marketing Campaign
-    [resourceIds[7], projectIds[4], fmt(weekStart), fmt(addDays(weekStart, 14)), 8, 'project', null, 'Campaign management'],
-    // Henry - leave
-    [resourceIds[7], null, fmt(addWeeks(weekStart, 3)), fmt(addDays(addWeeks(weekStart, 3), 2)), 8, 'leave', 'sick', 'Doctor appointment'],
-    // Bob - leave
-    [resourceIds[1], null, fmt(addWeeks(weekStart, 3)), fmt(addDays(addWeeks(weekStart, 3), 4)), 8, 'leave', 'vacation', 'Summer break'],
-  ];
-
-  for (const b of bookingsData) {
-    insertBooking.run(...b);
-  }
+  await supabase.from('Booking').insert([
+    { resource_id: rId[0], project_id: pId[0], start_date: fmt(w), end_date: fmt(addDays(w, 9)), hours_per_day: 6, booking_type: 'project', notes: 'Frontend development' },
+    { resource_id: rId[0], project_id: pId[3], start_date: fmt(addWeeks(w, 2)), end_date: fmt(addDays(addWeeks(w, 2), 4)), hours_per_day: 4, booking_type: 'project', notes: 'API review' },
+    { resource_id: rId[1], project_id: pId[1], start_date: fmt(w), end_date: fmt(addDays(w, 14)), hours_per_day: 8, booking_type: 'project', notes: 'Core features' },
+    { resource_id: rId[2], project_id: pId[0], start_date: fmt(w), end_date: fmt(addDays(w, 6)), hours_per_day: 8, booking_type: 'project', notes: 'UI mockups' },
+    { resource_id: rId[2], project_id: pId[2], start_date: fmt(addWeeks(w, 1)), end_date: fmt(addDays(addWeeks(w, 1), 9)), hours_per_day: 4, booking_type: 'project', notes: 'Visual identity' },
+    { resource_id: rId[3], project_id: pId[0], start_date: fmt(w), end_date: fmt(addDays(w, 4)), hours_per_day: 6, booking_type: 'project', notes: 'User research' },
+    { resource_id: rId[3], project_id: null, start_date: fmt(addWeeks(w, 1)), end_date: fmt(addDays(addWeeks(w, 1), 4)), hours_per_day: 6, booking_type: 'leave', leave_type: 'vacation', notes: 'Family trip' },
+    { resource_id: rId[4], project_id: pId[0], start_date: fmt(w), end_date: fmt(addDays(w, 19)), hours_per_day: 4, booking_type: 'project', notes: 'Project coordination' },
+    { resource_id: rId[4], project_id: pId[1], start_date: fmt(w), end_date: fmt(addDays(w, 19)), hours_per_day: 4, booking_type: 'project', notes: 'Project coordination' },
+    { resource_id: rId[5], project_id: pId[3], start_date: fmt(addWeeks(w, 2)), end_date: fmt(addDays(addWeeks(w, 2), 14)), hours_per_day: 8, booking_type: 'project', notes: 'Backend implementation' },
+    { resource_id: rId[5], project_id: pId[1], start_date: fmt(w), end_date: fmt(addDays(w, 9)), hours_per_day: 8, booking_type: 'project', notes: 'API endpoints' },
+    { resource_id: rId[6], project_id: pId[4], start_date: fmt(w), end_date: fmt(addDays(w, 14)), hours_per_day: 6, booking_type: 'project', notes: 'Content creation' },
+    { resource_id: rId[6], project_id: pId[2], start_date: fmt(addWeeks(w, 1)), end_date: fmt(addDays(addWeeks(w, 1), 9)), hours_per_day: 2, booking_type: 'project', notes: 'Copy writing' },
+    { resource_id: rId[7], project_id: pId[4], start_date: fmt(w), end_date: fmt(addDays(w, 14)), hours_per_day: 8, booking_type: 'project', notes: 'Campaign management' },
+    { resource_id: rId[7], project_id: null, start_date: fmt(addWeeks(w, 3)), end_date: fmt(addDays(addWeeks(w, 3), 2)), hours_per_day: 8, booking_type: 'leave', leave_type: 'sick', notes: 'Doctor appointment' },
+    { resource_id: rId[1], project_id: null, start_date: fmt(addWeeks(w, 3)), end_date: fmt(addDays(addWeeks(w, 3), 4)), hours_per_day: 8, booking_type: 'leave', leave_type: 'vacation', notes: 'Summer break' },
+  ]);
 
   console.log('Database seeded successfully!');
-  console.log(`  - ${depts.length} departments`);
-  console.log(`  - ${resourcesData.length} resources`);
-  console.log(`  - ${projectsData.length} projects`);
-  console.log(`  - ${bookingsData.length} bookings`);
+  console.log('  - 3 departments');
+  console.log('  - 8 resources');
+  console.log('  - 5 projects');
+  console.log('  - 16 bookings');
 }
 
-seed();
+seed().catch((e) => { console.error(e); process.exit(1); });

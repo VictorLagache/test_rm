@@ -19,31 +19,41 @@ const updateSchema = createSchema.partial().extend({
   is_active: z.boolean().optional(),
 });
 
-router.get('/', (_req: Request, res: Response) => {
-  res.json(projectService.getAllProjects());
+router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await projectService.getAllProjects());
+  } catch (err) { next(err); }
 });
 
-router.get('/:id', (req: Request, res: Response, next: NextFunction) => {
-  const project = projectService.getProjectById(Number(req.params.id));
-  if (!project) return next(new AppError(404, 'Project not found'));
-  res.json(project);
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const project = await projectService.getProjectById(Number(req.params.id));
+    if (!project) return next(new AppError(404, 'Project not found'));
+    res.json(project);
+  } catch (err) { next(err); }
 });
 
-router.post('/', validate(createSchema), (req: Request, res: Response) => {
-  const project = projectService.createProject(req.body);
-  res.status(201).json(project);
+router.post('/', validate(createSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const project = await projectService.createProject(req.body);
+    res.status(201).json(project);
+  } catch (err) { next(err); }
 });
 
-router.put('/:id', validate(updateSchema), (req: Request, res: Response, next: NextFunction) => {
-  const project = projectService.updateProject(Number(req.params.id), req.body);
-  if (!project) return next(new AppError(404, 'Project not found'));
-  res.json(project);
+router.put('/:id', validate(updateSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const project = await projectService.updateProject(Number(req.params.id), req.body);
+    if (!project) return next(new AppError(404, 'Project not found'));
+    res.json(project);
+  } catch (err) { next(err); }
 });
 
-router.delete('/:id', (req: Request, res: Response, next: NextFunction) => {
-  const deleted = projectService.deleteProject(Number(req.params.id));
-  if (!deleted) return next(new AppError(404, 'Project not found'));
-  res.status(204).send();
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const deleted = await projectService.deleteProject(Number(req.params.id));
+    if (!deleted) return next(new AppError(404, 'Project not found'));
+    res.status(204).send();
+  } catch (err) { next(err); }
 });
 
 export default router;

@@ -1,4 +1,4 @@
-import { getDb } from '../db/connection.js';
+import { supabase } from '../lib/supabase.js';
 import { eachDayOfInterval, parseISO, isWeekend, format } from 'date-fns';
 
 export interface UtilizationReport {
@@ -23,58 +23,48 @@ export interface ProjectReport {
   resource_count: number;
 }
 
-export function getUtilizationReport(startDate: string, endDate: string): UtilizationReport[] {
-  const db = getDb();
-
+export async function getUtilizationReport(startDate: string, endDate: string): Promise<UtilizationReport[]> {
   const days = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) });
   const workingDays = days.filter((d) => !isWeekend(d));
   const workingDayCount = workingDays.length;
   const workingDayStrings = workingDays.map((d) => format(d, 'yyyy-MM-dd'));
 
-  const resources = db.prepare(`
-    SELECT r.id, r.first_name || ' ' || r.last_name as resource_name,
-           r.capacity_hours, d.name as department_name
-    FROM resources r
-    LEFT JOIN departments d ON r.department_id = d.id
-    WHERE r.is_active = 1
-    ORDER BY r.first_name, r.last_name
-  `).all() as { id: number; resource_name: string; capacity_hours: number; department_name: string | null }[];
+  const [{ data: resources }, { data: bookings }] = await Promise.all([
+    supabase
+      .from('Resource')
+      .select('id, first_name, last_name, capacity_hours, Department(name)')
+      .eq('is_active', true)
+      .order('first_name')
+      .order('last_name'),
+    supabase
+      .from('Booking')
+      .select('resource_id, start_date, end_date, hours_per_day, booking_type')
+      .lte('start_date', endDate)
+      .gte('end_date', startDate),
+  ]);
 
-  const bookings = db.prepare(`
-    SELECT resource_id, start_date, end_date, hours_per_day, booking_type
-    FROM bookings
-    WHERE start_date <= ? AND end_date >= ?
-  `).all(endDate, startDate) as {
-    resource_id: number;
-    start_date: string;
-    end_date: string;
-    hours_per_day: number;
-    booking_type: string;
-  }[];
-
-  return resources.map((resource) => {
-    const totalCapacity = resource.capacity_hours * workingDayCount;
+  return (resources ?? []).map((resource: Record<string, unknown>) => {
+    const dept = resource.Department as { name: string } | null;
+    const cap = resource.capacity_hours as number;
+    const totalCapacity = cap * workingDayCount;
     let bookedHours = 0;
     let leaveHours = 0;
 
-    const resourceBookings = bookings.filter((b) => b.resource_id === resource.id);
+    const resourceBookings = (bookings ?? []).filter((b: Record<string, unknown>) => b.resource_id === resource.id);
 
     for (const dayStr of workingDayStrings) {
-      for (const booking of resourceBookings) {
-        if (dayStr >= booking.start_date && dayStr <= booking.end_date) {
-          if (booking.booking_type === 'project') {
-            bookedHours += booking.hours_per_day;
-          } else {
-            leaveHours += booking.hours_per_day;
-          }
+      for (const b of resourceBookings) {
+        if (dayStr >= (b.start_date as string) && dayStr <= (b.end_date as string)) {
+          if (b.booking_type === 'project') bookedHours += b.hours_per_day as number;
+          else leaveHours += b.hours_per_day as number;
         }
       }
     }
 
     return {
-      resource_id: resource.id,
-      resource_name: resource.resource_name,
-      department_name: resource.department_name,
+      resource_id: resource.id as number,
+      resource_name: `${resource.first_name} ${resource.last_name}`,
+      department_name: dept?.name ?? null,
       capacity_hours: totalCapacity,
       booked_hours: bookedHours,
       leave_hours: leaveHours,
@@ -84,54 +74,43 @@ export function getUtilizationReport(startDate: string, endDate: string): Utiliz
   });
 }
 
-export function getProjectReport(startDate: string, endDate: string): ProjectReport[] {
-  const db = getDb();
-
+export async function getProjectReport(startDate: string, endDate: string): Promise<ProjectReport[]> {
   const days = eachDayOfInterval({ start: parseISO(startDate), end: parseISO(endDate) });
   const workingDayStrings = days.filter((d) => !isWeekend(d)).map((d) => format(d, 'yyyy-MM-dd'));
 
-  const projects = db.prepare(`
-    SELECT id, name, client_name, color, budget_hours
-    FROM projects
-    WHERE is_active = 1
-    ORDER BY name
-  `).all() as { id: number; name: string; client_name: string; color: string; budget_hours: number | null }[];
+  const [{ data: projects }, { data: bookings }] = await Promise.all([
+    supabase.from('Project').select('id, name, client_name, color, budget_hours').eq('is_active', true).order('name'),
+    supabase
+      .from('Booking')
+      .select('project_id, resource_id, start_date, end_date, hours_per_day')
+      .eq('booking_type', 'project')
+      .lte('start_date', endDate)
+      .gte('end_date', startDate),
+  ]);
 
-  const bookings = db.prepare(`
-    SELECT project_id, resource_id, start_date, end_date, hours_per_day
-    FROM bookings
-    WHERE booking_type = 'project'
-      AND start_date <= ? AND end_date >= ?
-  `).all(endDate, startDate) as {
-    project_id: number;
-    resource_id: number;
-    start_date: string;
-    end_date: string;
-    hours_per_day: number;
-  }[];
-
-  return projects.map((project) => {
-    const projectBookings = bookings.filter((b) => b.project_id === project.id);
+  return (projects ?? []).map((project: Record<string, unknown>) => {
+    const projectBookings = (bookings ?? []).filter((b: Record<string, unknown>) => b.project_id === project.id);
     let bookedHours = 0;
     const resourceIds = new Set<number>();
 
-    for (const booking of projectBookings) {
-      resourceIds.add(booking.resource_id);
+    for (const b of projectBookings) {
+      resourceIds.add(b.resource_id as number);
       for (const dayStr of workingDayStrings) {
-        if (dayStr >= booking.start_date && dayStr <= booking.end_date) {
-          bookedHours += booking.hours_per_day;
+        if (dayStr >= (b.start_date as string) && dayStr <= (b.end_date as string)) {
+          bookedHours += b.hours_per_day as number;
         }
       }
     }
 
+    const budget = project.budget_hours as number | null;
     return {
-      project_id: project.id,
-      project_name: project.name,
-      client_name: project.client_name,
-      color: project.color,
-      budget_hours: project.budget_hours,
+      project_id: project.id as number,
+      project_name: project.name as string,
+      client_name: project.client_name as string,
+      color: project.color as string,
+      budget_hours: budget,
       booked_hours: bookedHours,
-      budget_used_percent: project.budget_hours ? Math.round((bookedHours / project.budget_hours) * 100) : null,
+      budget_used_percent: budget ? Math.round((bookedHours / budget) * 100) : null,
       resource_count: resourceIds.size,
     };
   });
